@@ -106,8 +106,8 @@ func TestToDomainMultipleSpanKinds(t *testing.T) {
 		json         string
 		tagFirstKey  string
 		tagSecondKey string
-		tagFirstVal  model.SpanKind
-		tagSecondVal model.SpanKind
+		tagFirstVal  string
+		tagSecondVal string
 	}{
 		{
 			json: `[{ "trace_id": -1, "id": 31, "annotations": [
@@ -117,8 +117,8 @@ func TestToDomainMultipleSpanKinds(t *testing.T) {
 		]}]`,
 			tagFirstKey:  model.SpanKindKey,
 			tagSecondKey: model.SpanKindKey,
-			tagFirstVal:  model.SpanKindClient,
-			tagSecondVal: model.SpanKindServer,
+			tagFirstVal:  model.SpanKindClient.String(),
+			tagSecondVal: model.SpanKindServer.String(),
 		},
 		{
 			json: `[{ "trace_id": -1, "id": 31, "annotations": [
@@ -128,8 +128,8 @@ func TestToDomainMultipleSpanKinds(t *testing.T) {
 		]}]`,
 			tagFirstKey:  model.SpanKindKey,
 			tagSecondKey: model.SpanKindKey,
-			tagFirstVal:  model.SpanKindServer,
-			tagSecondVal: model.SpanKindClient,
+			tagFirstVal:  model.SpanKindServer.String(),
+			tagSecondVal: model.SpanKindClient.String(),
 		},
 	}
 

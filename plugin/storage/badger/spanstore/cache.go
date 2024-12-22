@@ -4,8 +4,12 @@
 package spanstore
 
 import (
+	"encoding/binary"
+	"errors"
+	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,9 +39,17 @@ func NewCacheStore(db *badger.DB, ttl time.Duration, prefill bool) *CacheStore {
 		ttl:        ttl,
 		store:      db,
 	}
-
+	cs.cacheLock.Lock()
+	defer cs.cacheLock.Unlock()
 	if prefill {
-		cs.populateCaches()
+		loaded := autoMigrate(cs.store, cs.services, cs.operations)
+		if !loaded {
+			cs.loadData()
+		}
+	} else {
+		services := make(map[string]uint64)
+		operations := make(map[string]map[trace.SpanKind]map[string]uint64)
+		autoMigrate(cs.store, services, operations)
 	}
 	return cs
 }
@@ -45,6 +57,43 @@ func NewCacheStore(db *badger.DB, ttl time.Duration, prefill bool) *CacheStore {
 func (c *CacheStore) populateCaches() {
 	c.cacheLock.Lock()
 	defer c.cacheLock.Unlock()
+	c.loadData()
+}
+
+func autoMigrate(store *badger.DB, services map[string]uint64, operations map[string]map[trace.SpanKind]map[string]uint64) bool {
+	needToMigrate := false
+	loaded := false
+	err := store.View(func(txn *badger.Txn) error {
+		migrationKeyBytes := []byte(migrationKey)
+		_, err := txn.Get(migrationKeyBytes)
+		if err == nil {
+			// No need to migrate
+			return nil
+		} else if errors.Is(err, badger.ErrKeyNotFound) {
+			needToMigrate = true
+		}
+		return err
+	})
+
+	if needToMigrate {
+		err = store.Update(func(txn *badger.Txn) error {
+			iter := txn.NewIterator(badger.DefaultIteratorOptions)
+			defer iter.Close()
+			createNewIndexForOldData(txn, iter, services, operations)
+			createMigrationKey(txn)
+			loaded = true
+			return nil
+		})
+	}
+
+	if err != nil {
+		return false
+	}
+
+	return loaded
+}
+
+func (c *CacheStore) loadData() {
 	c.store.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		it := txn.NewIterator(opts)
@@ -56,16 +105,22 @@ func (c *CacheStore) populateCaches() {
 		for it.Seek(serviceKey); it.ValidForPrefix(serviceKey); it.Next() {
 			timestampStartIndex := len(it.Item().Key()) - (sizeOfTraceID + 8) // 8 = sizeof(uint64)
 			serviceNameWithOperation := string(it.Item().Key()[len(serviceKey):timestampStartIndex])
-			// This string is of type serviceName+operationName+len(serviceName)+spanKind
+			// This string is of type len(serviceName)-serviceName+operationName+spanKind
 			operationKindString := string(serviceNameWithOperation[len(serviceNameWithOperation)-1])
-			serviceNameLengthString := serviceNameWithOperation[(len(serviceNameWithOperation) - 4):(len(serviceNameWithOperation) - 1)]
+			serviceNameLengthIndex := strings.Index(serviceNameWithOperation, "-")
+			if serviceNameLengthIndex == -1 {
+				// Inconsistency we can't load this in cache, just skip it!
+				continue
+			}
+			serviceNameLengthString := serviceNameWithOperation[:serviceNameLengthIndex]
 			serviceNameLength, err := strconv.Atoi(serviceNameLengthString)
 			if err != nil {
 				// Inconsistency we can't load this in cache, just skip it!
 				continue
 			}
+			serviceNameWithOperation = serviceNameWithOperation[serviceNameLengthIndex+1:]
 			serviceName := serviceNameWithOperation[:serviceNameLength]
-			operationName := serviceNameWithOperation[serviceNameLength : len(serviceNameWithOperation)-4]
+			operationName := serviceNameWithOperation[serviceNameLength : len(serviceNameWithOperation)-1]
 			spanKind := model.GetSpanKindFromStringOfSpanKind(operationKindString)
 			keyTTL := it.Item().ExpiresAt()
 			if _, found := c.operations[serviceName]; !found {
@@ -89,6 +144,98 @@ func (c *CacheStore) populateCaches() {
 		}
 		return nil
 	})
+}
+
+func createNewIndexForOldData(txn *badger.Txn, it *badger.Iterator, services map[string]uint64, operations map[string]map[trace.SpanKind]map[string]uint64) {
+	serviceNameIndexKeyPrefix := []byte{serviceNameIndexKey}
+	// Load all the services in cache
+	for it.Seek(serviceNameIndexKeyPrefix); it.ValidForPrefix(serviceNameIndexKeyPrefix); it.Next() {
+		if it.Valid() {
+			timestampStartIndex := len(it.Item().Key()) - (sizeOfTraceID + 8) // 8 = sizeof(uint64)
+			serviceName := string(it.Item().Key()[len(serviceNameIndexKeyPrefix):timestampStartIndex])
+			keyTTL := it.Item().ExpiresAt()
+			if v, found := services[serviceName]; found {
+				if v > keyTTL {
+					continue
+				}
+			}
+			services[serviceName] = keyTTL
+		}
+	}
+	for service := range services {
+		loadAndCreateIndexForOperation(txn, it, service, operations)
+	}
+}
+
+func loadAndCreateIndexForOperation(txn *badger.Txn, it *badger.Iterator, service string, operations map[string]map[trace.SpanKind]map[string]uint64) {
+	operationKey := make([]byte, len(service)+1)
+	operationKey[0] = operationNameIndexKey
+	copy(operationKey[1:], service)
+	for it.Seek(operationKey); it.ValidForPrefix(operationKey); it.Next() {
+		if it.Valid() {
+			timestampStartIndex := len(it.Item().Key()) - (sizeOfTraceID + 8)
+			operation := string(it.Item().Key()[len(operationKey):timestampStartIndex])
+			timeStampAndTraceId := string(it.Item().Key()[timestampStartIndex:])
+			kind := getSpanKind(txn, service, timeStampAndTraceId)
+			keyTTL := it.Item().ExpiresAt()
+			if _, found := operations[service]; !found {
+				operations[service] = make(map[trace.SpanKind]map[string]uint64)
+			}
+			if _, found := operations[service][kind]; !found {
+				operations[service][kind] = make(map[string]uint64)
+			}
+			key := fmt.Sprintf("%d-", len(service)) + service + operation + fmt.Sprintf("%d", rune(kind))
+			err := createSpanKindIndex(txn, []byte(key), it.Item().Key()[timestampStartIndex:], keyTTL)
+			if err != nil {
+				return
+			}
+			if v, found := operations[service][kind][operation]; found {
+				if v > keyTTL {
+					continue
+				}
+			}
+			operations[service][kind][operation] = keyTTL
+		}
+	}
+}
+
+func getSpanKind(txn *badger.Txn, service string, timestampAndTraceId string) trace.SpanKind {
+	for i := 0; i < 6; i++ {
+		value := service + "span.kind" + trace.SpanKind(i).String()
+		valueBytes := []byte(value)
+		operationKey := make([]byte, 1+len(valueBytes)+8+sizeOfTraceID)
+		operationKey[0] = tagIndexKey
+		copy(operationKey[1:], valueBytes)
+		copy(operationKey[1+len(valueBytes):], timestampAndTraceId)
+		_, err := txn.Get(operationKey)
+		if err == nil {
+			return trace.SpanKind(i)
+		}
+	}
+	return trace.SpanKindUnspecified
+}
+
+func createMigrationKey(txn *badger.Txn) {
+	txn.SetEntry(&badger.Entry{
+		Key:   []byte(migrationKey),
+		Value: nil,
+	})
+}
+
+func createSpanKindIndex(txn *badger.Txn, key []byte, timeStampAndTraceId []byte, ttL uint64) error {
+	timeStamp := timeStampAndTraceId[:len(timeStampAndTraceId)-sizeOfTraceID]
+	timeStamp64 := binary.BigEndian.Uint64(timeStamp)
+	traceId, err := model.TraceIDFromBytes(timeStampAndTraceId[len(timeStampAndTraceId)-sizeOfTraceID:])
+	if err != nil {
+		return err
+	}
+	indexKey := createIndexKey(spanKindIndexKey, key, timeStamp64, traceId)
+	err = txn.SetEntry(&badger.Entry{
+		Key:       indexKey,
+		Value:     nil,
+		ExpiresAt: ttL,
+	})
+	return err
 }
 
 // Update caches the results of service and service + operation indexes and maintains their TTL

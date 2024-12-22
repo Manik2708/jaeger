@@ -48,6 +48,7 @@ var toSpanKind = map[string]SpanKind{
 	"producer": SpanKindProducer,
 	"consumer": SpanKindConsumer,
 	"internal": SpanKindInternal,
+	"":         SpanKindUnspecified,
 }
 
 func SpanKindFromString(kind string) (SpanKind, error) {

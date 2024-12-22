@@ -201,7 +201,7 @@ func loadAndCreateIndexForOperation(txn *badger.Txn, it *badger.Iterator, servic
 
 func getSpanKind(txn *badger.Txn, service string, timestampAndTraceId string) trace.SpanKind {
 	for i := 0; i < 6; i++ {
-		value := service + "span.kind" + trace.SpanKind(i).String()
+		value := service + model.SpanKindKey + trace.SpanKind(i).String()
 		valueBytes := []byte(value)
 		operationKey := make([]byte, 1+len(valueBytes)+8+sizeOfTraceID)
 		operationKey[0] = tagIndexKey

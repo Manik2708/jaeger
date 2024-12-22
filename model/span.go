@@ -6,6 +6,7 @@ package model
 
 import (
 	"encoding/gob"
+	"go.opentelemetry.io/otel/trace"
 	"io"
 	"strconv"
 
@@ -32,12 +33,12 @@ const (
 // Flags is a bit map of flags for a span
 type Flags uint32
 
-var toSpanKind = map[string]trace.SpanKind{
-	"client":   trace.SpanKindClient,
-	"server":   trace.SpanKindServer,
-	"producer": trace.SpanKindProducer,
-	"consumer": trace.SpanKindConsumer,
-	"internal": trace.SpanKindInternal,
+var toSpanKind = map[string]SpanKind{
+	"client":   SpanKindClient,
+	"server":   SpanKindServer,
+	"producer": SpanKindProducer,
+	"consumer": SpanKindConsumer,
+	"internal": SpanKindInternal,
 }
 
 var fromSpanKind = map[trace.SpanKind]string{
@@ -103,11 +104,11 @@ func (s *Span) GetSpanKind() (spanKind SpanKind, found bool) {
 	return SpanKindUnspecified, false
 }
 
-func GetSpanKindFromKey(k string) trace.SpanKind {
+func GetSpanKindFromKey(k string) SpanKind {
 	if kind, ok := toSpanKind[k]; ok {
 		return kind
 	}
-	return trace.SpanKindUnspecified
+	return SpanKindUnspecified
 }
 
 func GetSpanKindFromStringOfSpanKind(s string) trace.SpanKind {

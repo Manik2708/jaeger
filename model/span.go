@@ -9,7 +9,6 @@ import (
 	"io"
 	"strconv"
 
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -28,10 +27,6 @@ const (
 	DebugFlag = Flags(2)
 	// FirehoseFlag is the bit in Flags in order to define a span as a firehose span
 	FirehoseFlag = Flags(8)
-
-	keySamplerType  = "sampler.type"
-	keySpanKind     = "span.kind"
-	keySamplerParam = "sampler.param"
 )
 
 // Flags is a bit map of flags for a span
@@ -78,6 +73,10 @@ func (s SamplerType) String() string {
 	}
 }
 
+func SpanKindTag(kind SpanKind) KeyValue {
+	return String(SpanKindKey, string(kind))
+}
+
 // Hash implements Hash from Hashable.
 func (s *Span) Hash(w io.Writer) (err error) {
 	// gob is not the most efficient way, but it ensures we don't miss any fields.
@@ -87,21 +86,21 @@ func (s *Span) Hash(w io.Writer) (err error) {
 }
 
 // HasSpanKind returns true if the span has a `span.kind` tag set to `kind`.
-func (s *Span) HasSpanKind(kind trace.SpanKind) bool {
-	if tag, ok := KeyValues(s.Tags).FindByKey(keySpanKind); ok {
-		return tag.AsString() == kind.String()
+func (s *Span) HasSpanKind(kind SpanKind) bool {
+	if tag, ok := KeyValues(s.Tags).FindByKey(SpanKindKey); ok {
+		return tag.AsString() == string(kind)
 	}
 	return false
 }
 
 // GetSpanKind returns value of `span.kind` tag and whether the tag can be found
-func (s *Span) GetSpanKind() (spanKind trace.SpanKind, found bool) {
-	if tag, ok := KeyValues(s.Tags).FindByKey(keySpanKind); ok {
-		if kind, ok := toSpanKind[tag.AsString()]; ok {
+func (s *Span) GetSpanKind() (spanKind SpanKind, found bool) {
+	if tag, ok := KeyValues(s.Tags).FindByKey(SpanKindKey); ok {
+		if kind, err := SpanKindFromString(tag.AsString()); err == nil {
 			return kind, true
 		}
 	}
-	return trace.SpanKindUnspecified, false
+	return SpanKindUnspecified, false
 }
 
 func GetSpanKindFromKey(k string) trace.SpanKind {
@@ -127,7 +126,7 @@ func GetSpanKindFromStringOfSpanKind(s string) trace.SpanKind {
 // GetSamplerType returns the sampler type for span
 func (s *Span) GetSamplerType() SamplerType {
 	// There's no corresponding opentelemetry tag label corresponding to sampler.type
-	if tag, ok := KeyValues(s.Tags).FindByKey(keySamplerType); ok {
+	if tag, ok := KeyValues(s.Tags).FindByKey(SamplerTypeKey); ok {
 		if s, ok := toSamplerType[tag.VStr]; ok {
 			return s
 		}
@@ -138,13 +137,13 @@ func (s *Span) GetSamplerType() SamplerType {
 // IsRPCClient returns true if the span represents a client side of an RPC,
 // as indicated by the `span.kind` tag set to `client`.
 func (s *Span) IsRPCClient() bool {
-	return s.HasSpanKind(trace.SpanKindClient)
+	return s.HasSpanKind(SpanKindClient)
 }
 
 // IsRPCServer returns true if the span represents a server side of an RPC,
 // as indicated by the `span.kind` tag set to `server`.
 func (s *Span) IsRPCServer() bool {
-	return s.HasSpanKind(trace.SpanKindServer)
+	return s.HasSpanKind(SpanKindServer)
 }
 
 // NormalizeTimestamps changes all timestamps in this span to UTC.
@@ -196,7 +195,7 @@ func (s *Span) GetSamplerParams(logger *zap.Logger) (SamplerType, float64) {
 	if samplerType == SamplerTypeUnrecognized {
 		return SamplerTypeUnrecognized, 0
 	}
-	tag, ok := KeyValues(s.Tags).FindByKey(keySamplerParam)
+	tag, ok := KeyValues(s.Tags).FindByKey(SamplerParamKey)
 	if !ok {
 		return SamplerTypeUnrecognized, 0
 	}

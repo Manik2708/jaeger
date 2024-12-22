@@ -6,7 +6,6 @@ package model
 
 import (
 	"encoding/gob"
-	"go.opentelemetry.io/otel/trace"
 	"io"
 	"strconv"
 
@@ -32,22 +31,6 @@ const (
 
 // Flags is a bit map of flags for a span
 type Flags uint32
-
-var toSpanKind = map[string]SpanKind{
-	"client":   SpanKindClient,
-	"server":   SpanKindServer,
-	"producer": SpanKindProducer,
-	"consumer": SpanKindConsumer,
-	"internal": SpanKindInternal,
-}
-
-var fromSpanKind = map[trace.SpanKind]string{
-	trace.SpanKindClient:   "client",
-	trace.SpanKindServer:   "server",
-	trace.SpanKindProducer: "producer",
-	trace.SpanKindConsumer: "consumer",
-	trace.SpanKindInternal: "internal",
-}
 
 var toSamplerType = map[string]SamplerType{
 	"unrecognized":  SamplerTypeUnrecognized,
@@ -75,7 +58,7 @@ func (s SamplerType) String() string {
 }
 
 func SpanKindTag(kind SpanKind) KeyValue {
-	return String(SpanKindKey, string(kind))
+	return String(SpanKindKey, kind.String())
 }
 
 // Hash implements Hash from Hashable.
@@ -89,7 +72,7 @@ func (s *Span) Hash(w io.Writer) (err error) {
 // HasSpanKind returns true if the span has a `span.kind` tag set to `kind`.
 func (s *Span) HasSpanKind(kind SpanKind) bool {
 	if tag, ok := KeyValues(s.Tags).FindByKey(SpanKindKey); ok {
-		return tag.AsString() == string(kind)
+		return tag.AsString() == kind.String()
 	}
 	return false
 }
@@ -102,26 +85,6 @@ func (s *Span) GetSpanKind() (spanKind SpanKind, found bool) {
 		}
 	}
 	return SpanKindUnspecified, false
-}
-
-func GetSpanKindFromKey(k string) SpanKind {
-	if kind, ok := toSpanKind[k]; ok {
-		return kind
-	}
-	return SpanKindUnspecified
-}
-
-func GetSpanKindFromStringOfSpanKind(s string) trace.SpanKind {
-	kind, err := strconv.Atoi(s)
-	if err != nil {
-		return trace.SpanKindUnspecified
-	}
-	sKind := trace.SpanKind(kind)
-	_, ok := fromSpanKind[sKind]
-	if !ok {
-		return trace.SpanKindUnspecified
-	}
-	return sKind
 }
 
 // GetSamplerType returns the sampler type for span

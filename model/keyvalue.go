@@ -31,24 +31,69 @@ const (
 	SamplerParamKey = "sampler.param"
 )
 
-type SpanKind string
+type SpanKind int
 
 const (
-	SpanKindClient      SpanKind = "client"
-	SpanKindServer      SpanKind = "server"
-	SpanKindProducer    SpanKind = "producer"
-	SpanKindConsumer    SpanKind = "consumer"
-	SpanKindInternal    SpanKind = "internal"
-	SpanKindUnspecified SpanKind = ""
+	SpanKindUnspecified SpanKind = iota
+	SpanKindClient
+	SpanKindServer
+	SpanKindProducer
+	SpanKindConsumer
+	SpanKindInternal
 )
 
+var toSpanKind = map[string]SpanKind{
+	"client":   SpanKindClient,
+	"server":   SpanKindServer,
+	"producer": SpanKindProducer,
+	"consumer": SpanKindConsumer,
+	"internal": SpanKindInternal,
+}
+
 func SpanKindFromString(kind string) (SpanKind, error) {
-	switch SpanKind(kind) {
-	case SpanKindClient, SpanKindServer, SpanKindProducer, SpanKindConsumer, SpanKindInternal, SpanKindUnspecified:
-		return SpanKind(kind), nil
-	default:
-		return SpanKindUnspecified, fmt.Errorf("unknown span kind %q", kind)
+	if sKind, ok := toSpanKind[kind]; ok {
+		return sKind, nil
 	}
+	return SpanKindUnspecified, fmt.Errorf("unknown span kind %s", kind)
+}
+
+func (sk SpanKind) String() string {
+	switch sk {
+	case SpanKindClient:
+		return "client"
+	case SpanKindServer:
+		return "server"
+	case SpanKindProducer:
+		return "producer"
+	case SpanKindConsumer:
+		return "consumer"
+	case SpanKindInternal:
+		return "internal"
+	default:
+		return ""
+	}
+}
+
+func (sk SpanKind) Validate() bool {
+	switch sk {
+	case SpanKindClient, SpanKindServer, SpanKindProducer, SpanKindConsumer, SpanKindInternal:
+		return true
+	default:
+		return false
+	}
+}
+
+func GetSpanKindFromStringNumericString(s string) SpanKind {
+	kind, err := strconv.Atoi(s)
+	if err != nil {
+		return SpanKindUnspecified
+	}
+	sKind := SpanKind(kind)
+	ok := sKind.Validate()
+	if !ok {
+		return SpanKindUnspecified
+	}
+	return sKind
 }
 
 // KeyValues is a type alias that exposes convenience functions like Sort, FindByKey.

@@ -242,8 +242,10 @@ func (r *TraceReader) GetOperations(
 	if query.SpanKind == "" {
 		return r.cache.GetOperations(query.ServiceName, nil)
 	}
-	kind := model.GetSpanKindFromKey(query.SpanKind)
-	return r.cache.GetOperations(query.ServiceName, &kind)
+	if kind, err := model.SpanKindFromString(query.SpanKind); err == nil {
+		return r.cache.GetOperations(query.ServiceName, &kind)
+	}
+	return r.cache.GetOperations(query.ServiceName, nil)
 }
 
 // setQueryDefaults alters the query with defaults if certain parameters are not set

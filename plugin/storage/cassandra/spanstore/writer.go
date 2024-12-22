@@ -171,7 +171,7 @@ func (s *SpanWriter) writeIndexes(span *model.Span, ds *dbmodel.Span) error {
 	spanKind, _ := span.GetSpanKind() // if not found it returns ""
 	if err := s.saveServiceNameAndOperationName(dbmodel.Operation{
 		ServiceName:   ds.ServiceName,
-		SpanKind:      string(spanKind),
+		SpanKind:      spanKind.String(),
 		OperationName: ds.OperationName,
 	}); err != nil {
 		// should this be a soft failure?

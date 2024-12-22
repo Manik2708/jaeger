@@ -207,7 +207,7 @@ func TestGetSpanKind(t *testing.T) {
 	assert.Equal(t, model.SpanKindUnspecified, spanKind)
 	assert.False(t, found)
 
-	span = makeSpan(model.SpanKindTag("client"))
+	span = makeSpan(model.SpanKindTag(model.SpanKindClient))
 	spanKind, found = span.GetSpanKind()
 	assert.Equal(t, model.SpanKindClient, spanKind)
 	assert.True(t, found)

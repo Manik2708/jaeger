@@ -392,7 +392,9 @@ func (toDomain) getLogFields(annotation *zipkincore.Annotation) []model.KeyValue
 func (toDomain) getSpanKindTag(annotations []*zipkincore.Annotation) (model.KeyValue, bool) {
 	for _, a := range annotations {
 		if spanKind, ok := coreAnnotations[a.Value]; ok {
-			return model.SpanKindTag(model.SpanKind(spanKind)), true
+			if k, err := model.SpanKindFromString(spanKind); err == nil {
+				return model.SpanKindTag(k), true
+			}
 		}
 	}
 	return model.KeyValue{}, false

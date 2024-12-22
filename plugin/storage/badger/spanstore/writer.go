@@ -36,6 +36,7 @@ const (
 	protoEncoding         byte   = 0x02 // Last 4 bits of the meta byte are for encoding type
 	defaultEncoding       byte   = protoEncoding
 	migrationKey          string = "jaeger_spanstore_migration"
+	seperater             string = "-"
 )
 
 // SpanWriter for writing spans to badger
@@ -73,9 +74,8 @@ func (w *SpanWriter) WriteSpan(_ context.Context, span *model.Span) error {
 	entriesToStore = append(entriesToStore, w.createBadgerEntry(createIndexKey(serviceNameIndexKey, []byte(span.Process.ServiceName), startTime, span.TraceID), nil, expireTime))
 	entriesToStore = append(entriesToStore, w.createBadgerEntry(createIndexKey(operationNameIndexKey, []byte(span.Process.ServiceName+span.OperationName), startTime, span.TraceID), nil, expireTime))
 	kind, _ := span.GetSpanKind()
-	kindString := strconv.FormatInt(int64(rune(kind)), 10)
-
-	formattedLengthOfService := fmt.Sprintf("%d-", len(span.Process.ServiceName))
+	kindString := strconv.Itoa(int(kind))
+	formattedLengthOfService := strconv.Itoa(len(span.Process.ServiceName)) + seperater
 	// This index is only for loading span.kind into cache
 	entriesToStore = append(entriesToStore, w.createBadgerEntry(createIndexKey(spanKindIndexKey, []byte(formattedLengthOfService+span.Process.ServiceName+span.OperationName+kindString), startTime, span.TraceID), nil, expireTime))
 	// It doesn't matter if we overwrite Duration index keys, everything is read at Trace level in any case

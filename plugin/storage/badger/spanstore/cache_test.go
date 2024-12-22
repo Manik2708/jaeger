@@ -13,7 +13,6 @@ import (
 	"github.com/dgraph-io/badger/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/jaegertracing/jaeger/model"
 )
@@ -30,8 +29,8 @@ func TestExpiredItems(t *testing.T) {
 
 		// Expired service
 
-		cache.Update("service1", "op1", trace.SpanKindUnspecified, expireTime)
-		cache.Update("service1", "op2", trace.SpanKindUnspecified, expireTime)
+		cache.Update("service1", "op1", model.SpanKindUnspecified, expireTime)
+		cache.Update("service1", "op2", model.SpanKindUnspecified, expireTime)
 
 		services, err := cache.GetServices()
 		require.NoError(t, err)
@@ -39,8 +38,8 @@ func TestExpiredItems(t *testing.T) {
 
 		// Expired service for operations
 
-		cache.Update("service1", "op1", trace.SpanKindUnspecified, expireTime)
-		cache.Update("service1", "op2", trace.SpanKindUnspecified, expireTime)
+		cache.Update("service1", "op1", model.SpanKindUnspecified, expireTime)
+		cache.Update("service1", "op2", model.SpanKindUnspecified, expireTime)
 
 		operations, err := cache.GetOperations("service1", nil)
 		require.NoError(t, err)
@@ -48,8 +47,8 @@ func TestExpiredItems(t *testing.T) {
 
 		// Expired operations, stable service
 
-		cache.Update("service1", "op1", trace.SpanKindUnspecified, expireTime)
-		cache.Update("service1", "op2", trace.SpanKindUnspecified, expireTime)
+		cache.Update("service1", "op1", model.SpanKindUnspecified, expireTime)
+		cache.Update("service1", "op2", model.SpanKindUnspecified, expireTime)
 
 		cache.services["service1"] = uint64(time.Now().Unix() + 1e10)
 
@@ -67,30 +66,30 @@ func TestCacheStore_GetOperations(t *testing.T) {
 		serviceName := "service1"
 		operationName := "op1"
 		cache.services[serviceName] = uint64(time.Now().Unix() + 1e10)
-		cache.operations = make(map[string]map[trace.SpanKind]map[string]uint64)
-		cache.operations[serviceName] = make(map[trace.SpanKind]map[string]uint64)
+		cache.operations = make(map[string]map[model.SpanKind]map[string]uint64)
+		cache.operations[serviceName] = make(map[model.SpanKind]map[string]uint64)
 		for i := 0; i <= 5; i++ {
-			cache.operations[serviceName][trace.SpanKind(i)] = make(map[string]uint64)
-			cache.operations[serviceName][trace.SpanKind(i)][operationName] = expireTime
+			cache.operations[serviceName][model.SpanKind(i)] = make(map[string]uint64)
+			cache.operations[serviceName][model.SpanKind(i)][operationName] = expireTime
 		}
 		operations, err := cache.GetOperations(serviceName, nil)
 		require.NoError(t, err)
 		assert.Len(t, operations, 6)
 		var kinds []string
 		for i := 0; i <= 5; i++ {
-			kinds = append(kinds, trace.SpanKind(i).String())
+			kinds = append(kinds, model.SpanKind(i).String())
 		}
 		// This is necessary as we want to check whether the result is sorted or not
 		sort.Strings(kinds)
 		for i := 0; i <= 5; i++ {
 			assert.Equal(t, kinds[i], operations[i].SpanKind)
 			assert.Equal(t, operationName, operations[i].Name)
-			k := trace.SpanKind(i)
+			k := model.SpanKind(i)
 			kp := &k
 			singleKindOperations, err := cache.GetOperations(serviceName, kp)
 			require.NoError(t, err)
 			assert.Len(t, singleKindOperations, 1)
-			assert.Equal(t, trace.SpanKind(i).String(), singleKindOperations[0].SpanKind)
+			assert.Equal(t, model.SpanKind(i).String(), singleKindOperations[0].SpanKind)
 			assert.Equal(t, operationName, singleKindOperations[0].Name)
 		}
 	})
@@ -103,8 +102,8 @@ func TestCacheStore_Update(t *testing.T) {
 		serviceName := "service1"
 		operationName := "op1"
 		for i := 0; i <= 5; i++ {
-			cache.Update(serviceName, operationName, trace.SpanKind(i), expireTime)
-			assert.Equal(t, expireTime, cache.operations[serviceName][trace.SpanKind(i)][operationName])
+			cache.Update(serviceName, operationName, model.SpanKind(i), expireTime)
+			assert.Equal(t, expireTime, cache.operations[serviceName][model.SpanKind(i)][operationName])
 		}
 	})
 }
@@ -123,7 +122,7 @@ func testPrefillAndMigration(t *testing.T, prefill bool) {
 		for i := 0; i < 6; i++ {
 			service := fmt.Sprintf("service%d", i)
 			operation := fmt.Sprintf("operation%d", i)
-			kind := trace.SpanKind(i)
+			kind := model.SpanKind(i)
 			span := createDummySpanWithKind(service, operation, kind)
 			spans = append(spans, span)
 			// This is to create old data
@@ -143,7 +142,7 @@ func TestCacheStore_PrefillButNoMigration(t *testing.T) {
 		for i := 0; i < 6; i++ {
 			service := fmt.Sprintf("service%d", i)
 			operation := fmt.Sprintf("operation%d", i)
-			kind := trace.SpanKind(i)
+			kind := model.SpanKind(i)
 			span := createDummySpanWithKind(service, operation, kind)
 			spans = append(spans, span)
 			// This is to create old data
@@ -166,7 +165,7 @@ func checkIfCacheContainsKeys(t *testing.T, store *badger.DB, spans []*model.Spa
 		} else {
 			assert.False(t, foundService)
 		}
-		_, foundOperation := cache.operations[fmt.Sprintf("service%d", i)][trace.SpanKind(i)][fmt.Sprintf("operation%d", i)]
+		_, foundOperation := cache.operations[fmt.Sprintf("service%d", i)][model.SpanKind(i)][fmt.Sprintf("operation%d", i)]
 		if prefill {
 			assert.True(t, foundOperation)
 		} else {
@@ -210,15 +209,15 @@ func TestOldReads(t *testing.T) {
 
 		nuTid := tid.Add(1 * time.Hour)
 
-		cache.Update("service1", "operation1", trace.SpanKindUnspecified, uint64(tid.Unix()))
+		cache.Update("service1", "operation1", model.SpanKindUnspecified, uint64(tid.Unix()))
 		cache.services["service1"] = uint64(nuTid.Unix())
-		cache.operations["service1"][trace.SpanKindUnspecified]["operation1"] = uint64(nuTid.Unix())
+		cache.operations["service1"][model.SpanKindUnspecified]["operation1"] = uint64(nuTid.Unix())
 
 		cache.populateCaches()
 
 		// Now make sure we didn't use the older timestamps from the DB
 		assert.Equal(t, uint64(nuTid.Unix()), cache.services["service1"])
-		assert.Equal(t, uint64(nuTid.Unix()), cache.operations["service1"][trace.SpanKindUnspecified]["operation1"])
+		assert.Equal(t, uint64(nuTid.Unix()), cache.operations["service1"][model.SpanKindUnspecified]["operation1"])
 	})
 }
 
@@ -241,7 +240,7 @@ func runWithBadger(t *testing.T, test func(store *badger.DB, t *testing.T)) {
 	test(store, t)
 }
 
-func createDummySpanWithKind(service string, operation string, kind trace.SpanKind) *model.Span {
+func createDummySpanWithKind(service string, operation string, kind model.SpanKind) *model.Span {
 	tid := time.Now()
 	testSpan := model.Span{
 		TraceID: model.TraceID{

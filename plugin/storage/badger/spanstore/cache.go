@@ -6,7 +6,6 @@ package spanstore
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,7 +13,6 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/jaegertracing/jaeger/model"
 	"github.com/jaegertracing/jaeger/storage/spanstore"
@@ -25,7 +23,7 @@ type CacheStore struct {
 	// Given the small amount of data these will store, we use the same structure as the memory store
 	cacheLock  sync.Mutex // write heavy - Mutex is faster than RWMutex for writes
 	services   map[string]uint64
-	operations map[string]map[trace.SpanKind]map[string]uint64
+	operations map[string]map[model.SpanKind]map[string]uint64
 
 	store *badger.DB
 	ttl   time.Duration
@@ -35,7 +33,7 @@ type CacheStore struct {
 func NewCacheStore(db *badger.DB, ttl time.Duration, prefill bool) *CacheStore {
 	cs := &CacheStore{
 		services:   make(map[string]uint64),
-		operations: make(map[string]map[trace.SpanKind]map[string]uint64),
+		operations: make(map[string]map[model.SpanKind]map[string]uint64),
 		ttl:        ttl,
 		store:      db,
 	}
@@ -48,7 +46,7 @@ func NewCacheStore(db *badger.DB, ttl time.Duration, prefill bool) *CacheStore {
 		}
 	} else {
 		services := make(map[string]uint64)
-		operations := make(map[string]map[trace.SpanKind]map[string]uint64)
+		operations := make(map[string]map[model.SpanKind]map[string]uint64)
 		autoMigrate(cs.store, services, operations)
 	}
 	return cs
@@ -60,7 +58,7 @@ func (c *CacheStore) populateCaches() {
 	c.loadData()
 }
 
-func autoMigrate(store *badger.DB, services map[string]uint64, operations map[string]map[trace.SpanKind]map[string]uint64) bool {
+func autoMigrate(store *badger.DB, services map[string]uint64, operations map[string]map[model.SpanKind]map[string]uint64) bool {
 	needToMigrate := false
 	loaded := false
 	err := store.View(func(txn *badger.Txn) error {
@@ -121,10 +119,10 @@ func (c *CacheStore) loadData() {
 			serviceNameWithOperation = serviceNameWithOperation[serviceNameLengthIndex+1:]
 			serviceName := serviceNameWithOperation[:serviceNameLength]
 			operationName := serviceNameWithOperation[serviceNameLength : len(serviceNameWithOperation)-1]
-			spanKind := model.GetSpanKindFromStringOfSpanKind(operationKindString)
+			spanKind := model.GetSpanKindFromStringNumericString(operationKindString)
 			keyTTL := it.Item().ExpiresAt()
 			if _, found := c.operations[serviceName]; !found {
-				c.operations[serviceName] = make(map[trace.SpanKind]map[string]uint64)
+				c.operations[serviceName] = make(map[model.SpanKind]map[string]uint64)
 			}
 			if _, found := c.operations[serviceName][spanKind]; !found {
 				c.operations[serviceName][spanKind] = make(map[string]uint64)
@@ -146,7 +144,7 @@ func (c *CacheStore) loadData() {
 	})
 }
 
-func createNewIndexForOldData(txn *badger.Txn, it *badger.Iterator, services map[string]uint64, operations map[string]map[trace.SpanKind]map[string]uint64) {
+func createNewIndexForOldData(txn *badger.Txn, it *badger.Iterator, services map[string]uint64, operations map[string]map[model.SpanKind]map[string]uint64) {
 	serviceNameIndexKeyPrefix := []byte{serviceNameIndexKey}
 	// Load all the services in cache
 	for it.Seek(serviceNameIndexKeyPrefix); it.ValidForPrefix(serviceNameIndexKeyPrefix); it.Next() {
@@ -167,7 +165,7 @@ func createNewIndexForOldData(txn *badger.Txn, it *badger.Iterator, services map
 	}
 }
 
-func loadAndCreateIndexForOperation(txn *badger.Txn, it *badger.Iterator, service string, operations map[string]map[trace.SpanKind]map[string]uint64) {
+func loadAndCreateIndexForOperation(txn *badger.Txn, it *badger.Iterator, service string, operations map[string]map[model.SpanKind]map[string]uint64) {
 	operationKey := make([]byte, len(service)+1)
 	operationKey[0] = operationNameIndexKey
 	copy(operationKey[1:], service)
@@ -179,12 +177,12 @@ func loadAndCreateIndexForOperation(txn *badger.Txn, it *badger.Iterator, servic
 			kind := getSpanKind(txn, service, timeStampAndTraceId)
 			keyTTL := it.Item().ExpiresAt()
 			if _, found := operations[service]; !found {
-				operations[service] = make(map[trace.SpanKind]map[string]uint64)
+				operations[service] = make(map[model.SpanKind]map[string]uint64)
 			}
 			if _, found := operations[service][kind]; !found {
 				operations[service][kind] = make(map[string]uint64)
 			}
-			key := fmt.Sprintf("%d-", len(service)) + service + operation + fmt.Sprintf("%d", rune(kind))
+			key := strconv.Itoa(len(service)) + "-" + service + operation + strconv.Itoa(int(kind))
 			err := createSpanKindIndex(txn, []byte(key), it.Item().Key()[timestampStartIndex:], keyTTL)
 			if err != nil {
 				return
@@ -199,9 +197,9 @@ func loadAndCreateIndexForOperation(txn *badger.Txn, it *badger.Iterator, servic
 	}
 }
 
-func getSpanKind(txn *badger.Txn, service string, timestampAndTraceId string) trace.SpanKind {
+func getSpanKind(txn *badger.Txn, service string, timestampAndTraceId string) model.SpanKind {
 	for i := 0; i < 6; i++ {
-		value := service + model.SpanKindKey + trace.SpanKind(i).String()
+		value := service + model.SpanKindKey + model.SpanKind(i).String()
 		valueBytes := []byte(value)
 		operationKey := make([]byte, 1+len(valueBytes)+8+sizeOfTraceID)
 		operationKey[0] = tagIndexKey
@@ -209,10 +207,10 @@ func getSpanKind(txn *badger.Txn, service string, timestampAndTraceId string) tr
 		copy(operationKey[1+len(valueBytes):], timestampAndTraceId)
 		_, err := txn.Get(operationKey)
 		if err == nil {
-			return trace.SpanKind(i)
+			return model.SpanKind(i)
 		}
 	}
-	return trace.SpanKindUnspecified
+	return model.SpanKindUnspecified
 }
 
 func createMigrationKey(txn *badger.Txn) {
@@ -239,11 +237,11 @@ func createSpanKindIndex(txn *badger.Txn, key []byte, timeStampAndTraceId []byte
 }
 
 // Update caches the results of service and service + operation indexes and maintains their TTL
-func (c *CacheStore) Update(service, operation string, kind trace.SpanKind, expireTime uint64) {
+func (c *CacheStore) Update(service, operation string, kind model.SpanKind, expireTime uint64) {
 	c.cacheLock.Lock()
 	c.services[service] = expireTime
 	if _, ok := c.operations[service]; !ok {
-		c.operations[service] = make(map[trace.SpanKind]map[string]uint64)
+		c.operations[service] = make(map[model.SpanKind]map[string]uint64)
 	}
 	if _, ok := c.operations[service][kind]; !ok {
 		c.operations[service][kind] = make(map[string]uint64)
@@ -253,7 +251,7 @@ func (c *CacheStore) Update(service, operation string, kind trace.SpanKind, expi
 }
 
 // GetOperations returns all operations for a specific service & spanKind traced by Jaeger
-func (c *CacheStore) GetOperations(service string, kind *trace.SpanKind) ([]spanstore.Operation, error) {
+func (c *CacheStore) GetOperations(service string, kind *model.SpanKind) ([]spanstore.Operation, error) {
 	operations := make([]spanstore.Operation, 0, len(c.services))
 	//nolint: gosec // G115
 	t := uint64(time.Now().Unix())
@@ -290,7 +288,7 @@ func (c *CacheStore) GetOperations(service string, kind *trace.SpanKind) ([]span
 	return operations, nil
 }
 
-func insertOperations(c *CacheStore, operations []spanstore.Operation, service, operation string, kind trace.SpanKind, t, e uint64) []spanstore.Operation {
+func insertOperations(c *CacheStore, operations []spanstore.Operation, service, operation string, kind model.SpanKind, t, e uint64) []spanstore.Operation {
 	if e > t {
 		op := spanstore.Operation{Name: operation, SpanKind: kind.String()}
 		operations = append(operations, op)

@@ -10,14 +10,6 @@ import (
 	"net/http"
 )
 
-type notFoundError struct {
-	err error
-}
-
-func (e notFoundError) Error() string {
-	return e.err.Error()
-}
-
 // ResponseError holds information about a request error
 type ResponseError struct {
 	// Error returned by the http client
@@ -105,9 +97,6 @@ func (c *Client) setAuthorization(r *http.Request) {
 }
 
 func (*Client) handleFailedRequest(res *http.Response) error {
-	if res.StatusCode == http.StatusNotFound {
-		return notFoundError{err: fmt.Errorf("request failed, status code: %d", res.StatusCode)}
-	}
 	if res.Body != nil {
 		bodyBytes, err := io.ReadAll(res.Body)
 		if err != nil {

@@ -193,8 +193,11 @@ func (i *IndicesClient) AliasExists(alias string) (bool, error) {
 		method:   http.MethodHead,
 	})
 	if err != nil {
-		if errors.As(err, &notFoundError{}) {
-			return false, nil
+		var responseError ResponseError
+		if errors.As(err, &responseError) {
+			if responseError.StatusCode == http.StatusNotFound {
+				return false, nil
+			}
 		}
 		return false, fmt.Errorf("failed to check if alias exists: %w", err)
 	}
@@ -208,8 +211,11 @@ func (i *IndicesClient) IndexExists(index string) (bool, error) {
 		method:   http.MethodHead,
 	})
 	if err != nil {
-		if errors.As(err, &notFoundError{}) {
-			return false, nil
+		var responseError ResponseError
+		if errors.As(err, &responseError) {
+			if responseError.StatusCode == http.StatusNotFound {
+				return false, nil
+			}
 		}
 		return false, fmt.Errorf("failed to check if index exists: %w", err)
 	}

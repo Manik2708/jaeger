@@ -187,21 +187,33 @@ func (i *IndicesClient) DeleteAlias(aliases []Alias) error {
 }
 
 // AliasExists check whether an alias exists or not
-func (i *IndicesClient) AliasExists(alias string) error {
+func (i *IndicesClient) AliasExists(alias string) (bool, error) {
 	_, err := i.request(elasticRequest{
 		endpoint: "_alias/" + alias,
 		method:   http.MethodHead,
 	})
-	return err
+	if err != nil {
+		if errors.As(err, &notFoundError{}) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check if alias exists: %w", err)
+	}
+	return true, nil
 }
 
 // IndexExists check whether an index exists or not
-func (i *IndicesClient) IndexExists(index string) error {
+func (i *IndicesClient) IndexExists(index string) (bool, error) {
 	_, err := i.request(elasticRequest{
 		endpoint: index,
 		method:   http.MethodHead,
 	})
-	return err
+	if err != nil {
+		if errors.As(err, &notFoundError{}) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check if index exists: %w", err)
+	}
+	return true, nil
 }
 
 func (*IndicesClient) aliasesString(aliases []Alias) string {

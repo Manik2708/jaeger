@@ -294,32 +294,52 @@ func TestAliasExists(t *testing.T) {
 
 func testIndexOrAliasExistence(t *testing.T, existence string) {
 	maxURLPathLength := 4000
-	t.Run("success", func(t *testing.T) {
-		apiTriggered := false
-		testServer := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-			apiTriggered = true
-			assert.Equal(t, http.MethodHead, req.Method)
-			assert.Equal(t, "Basic foobar", req.Header.Get("Authorization"))
-			assert.LessOrEqual(t, len(req.URL.Path), maxURLPathLength)
-			res.WriteHeader(http.StatusOK)
-		}))
-		defer testServer.Close()
-		c := &IndicesClient{
-			Client: Client{
-				Client:    testServer.Client(),
-				Endpoint:  testServer.URL,
-				BasicAuth: "foobar",
-			},
-		}
-		var err error
-		if existence == "index" {
-			err = c.IndexExists("jaeger-span")
-		} else if existence == "alias" {
-			err = c.AliasExists("jaeger-span")
-		}
-		require.NoError(t, err)
-		assert.True(t, apiTriggered)
-	})
+	tests := []struct {
+		name         string
+		exists       bool
+		responseCode int
+	}{
+		{
+			name:         "exists",
+			responseCode: http.StatusOK,
+			exists:       true,
+		},
+		{
+			name:         "not exists",
+			responseCode: http.StatusNotFound,
+			exists:       false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			apiTriggered := false
+			testServer := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+				apiTriggered = true
+				assert.Equal(t, http.MethodHead, req.Method)
+				assert.Equal(t, "Basic foobar", req.Header.Get("Authorization"))
+				assert.LessOrEqual(t, len(req.URL.Path), maxURLPathLength)
+				res.WriteHeader(test.responseCode)
+			}))
+			defer testServer.Close()
+			c := &IndicesClient{
+				Client: Client{
+					Client:    testServer.Client(),
+					Endpoint:  testServer.URL,
+					BasicAuth: "foobar",
+				},
+			}
+			var exists bool
+			var err error
+			if existence == "index" {
+				exists, err = c.IndexExists("jaeger-span")
+			} else if existence == "alias" {
+				exists, err = c.AliasExists("jaeger-span")
+			}
+			require.NoError(t, err)
+			assert.True(t, apiTriggered)
+			assert.Equal(t, test.exists, exists)
+		})
+	}
 }
 
 func TestClientRequestError(t *testing.T) {

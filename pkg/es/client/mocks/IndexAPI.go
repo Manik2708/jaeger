@@ -18,21 +18,31 @@ type IndexAPI struct {
 }
 
 // AliasExists provides a mock function with given fields: alias
-func (_m *IndexAPI) AliasExists(alias string) error {
+func (_m *IndexAPI) AliasExists(alias string) (bool, error) {
 	ret := _m.Called(alias)
 
 	if len(ret) == 0 {
 		panic("no return value specified for AliasExists")
 	}
 
-	var r0 error
-	if rf, ok := ret.Get(0).(func(string) error); ok {
+	var r0 bool
+	var r1 error
+	if rf, ok := ret.Get(0).(func(string) (bool, error)); ok {
+		return rf(alias)
+	}
+	if rf, ok := ret.Get(0).(func(string) bool); ok {
 		r0 = rf(alias)
 	} else {
-		r0 = ret.Error(0)
+		r0 = ret.Get(0).(bool)
 	}
 
-	return r0
+	if rf, ok := ret.Get(1).(func(string) error); ok {
+		r1 = rf(alias)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
 }
 
 // CreateAlias provides a mock function with given fields: aliases
@@ -156,21 +166,31 @@ func (_m *IndexAPI) GetJaegerIndices(prefix string) ([]client.Index, error) {
 }
 
 // IndexExists provides a mock function with given fields: index
-func (_m *IndexAPI) IndexExists(index string) error {
+func (_m *IndexAPI) IndexExists(index string) (bool, error) {
 	ret := _m.Called(index)
 
 	if len(ret) == 0 {
 		panic("no return value specified for IndexExists")
 	}
 
-	var r0 error
-	if rf, ok := ret.Get(0).(func(string) error); ok {
+	var r0 bool
+	var r1 error
+	if rf, ok := ret.Get(0).(func(string) (bool, error)); ok {
+		return rf(index)
+	}
+	if rf, ok := ret.Get(0).(func(string) bool); ok {
 		r0 = rf(index)
 	} else {
-		r0 = ret.Error(0)
+		r0 = ret.Get(0).(bool)
 	}
 
-	return r0
+	if rf, ok := ret.Get(1).(func(string) error); ok {
+		r1 = rf(index)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
 }
 
 // Rollover provides a mock function with given fields: rolloverTarget, conditions

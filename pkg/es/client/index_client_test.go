@@ -280,7 +280,19 @@ func TestClientDeleteIndices(t *testing.T) {
 	}
 }
 
-func TestClientIndexExists(t *testing.T) {
+func TestIndexExists(t *testing.T) {
+	t.Run("index exists", func(t *testing.T) {
+		testIndexOrAliasExistence(t, "index")
+	})
+}
+
+func TestAliasExists(t *testing.T) {
+	t.Run("alias exists", func(t *testing.T) {
+		testIndexOrAliasExistence(t, "alias")
+	})
+}
+
+func testIndexOrAliasExistence(t *testing.T, existence string) {
 	maxURLPathLength := 4000
 	tests := []struct {
 		name         string
@@ -316,7 +328,13 @@ func TestClientIndexExists(t *testing.T) {
 					BasicAuth: "foobar",
 				},
 			}
-			exists, err := c.IndexExists("jaeger-span")
+			var exists bool
+			var err error
+			if existence == "index" {
+				exists, err = c.IndexExists("jaeger-span")
+			} else if existence == "alias" {
+				exists, err = c.AliasExists("jaeger-span")
+			}
 			require.NoError(t, err)
 			assert.True(t, apiTriggered)
 			assert.Equal(t, test.exists, exists)

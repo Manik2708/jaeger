@@ -4,11 +4,8 @@
 package init
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"strings"
 
 	"github.com/jaegertracing/jaeger/cmd/es-rollover/app"
 	"github.com/jaegertracing/jaeger/internal/storage/v1/elasticsearch/mappings"
@@ -73,34 +70,17 @@ func createIndexIfNotExist(c client.IndexAPI, index string) error {
 	if err != nil {
 		return err
 	}
-	if !exists {
-		err := c.CreateIndex(index)
-		if err != nil {
-			var esErr client.ResponseError
-			if errors.As(err, &esErr) {
-				if esErr.StatusCode != http.StatusBadRequest || esErr.Body == nil {
-					return esErr.Err
-				}
-				// check for the reason of the error
-				jsonError := map[string]any{}
-				err := json.Unmarshal(esErr.Body, &jsonError)
-				if err != nil {
-					// return unmarshal error
-					return err
-				}
-				errorMap := jsonError["error"].(map[string]any)
-				// We want to skip this error:
-				// {"error":{"root_cause":[{"type":"invalid_index_name_exception","reason":"Invalid index name [jaeger-span-000001], already exists as alias","index_uuid":"_na_","index":"jaeger-span-000001"}],"type":"invalid_index_name_exception","reason":"Invalid index name [jaeger-span-000001], already exists as alias","index_uuid":"_na_","index":"jaeger-span-000001"},"status":400}
-				// This error can occur when alias is pointing to a non-existing index. But this error means that rollover has already taken place and init needs to run only once so this error can be ignored safely.
-				if strings.Contains(errorMap["type"].(string), "invalid_index_name_exception") {
-					return nil
-				}
-			}
-			// Return any other error unrelated to the response
-			return err
-		}
+	if exists {
+		return nil
 	}
-	return nil
+	aliasExists, err := c.AliasExists(index)
+	if err != nil {
+		return err
+	}
+	if aliasExists {
+		return nil
+	}
+	return c.CreateIndex(index)
 }
 
 func (c Action) init(version uint, indexopt app.IndexOption) error {

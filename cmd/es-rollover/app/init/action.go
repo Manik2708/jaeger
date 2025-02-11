@@ -6,6 +6,7 @@ package init
 import (
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/jaegertracing/jaeger/cmd/es-rollover/app"
 	"github.com/jaegertracing/jaeger/internal/storage/v1/elasticsearch/mappings"
@@ -66,21 +67,29 @@ func (c Action) Do() error {
 }
 
 func createIndexIfNotExist(c client.IndexAPI, index string) error {
-	exists, err := c.IndexExists(index)
+	err := c.IndexExists(index)
+	err = handleNotFoundError(err)
 	if err != nil {
 		return err
 	}
-	if exists {
-		return nil
-	}
-	aliasExists, err := c.AliasExists(index)
+	err = c.AliasExists(index)
+	err = handleNotFoundError(err)
 	if err != nil {
 		return err
-	}
-	if aliasExists {
-		return nil
 	}
 	return c.CreateIndex(index)
+}
+
+func handleNotFoundError(err error) error {
+	if err != nil {
+		var resError client.ResponseError
+		if errors.As(err, &resError) {
+			if resError.StatusCode == http.StatusNotFound {
+				return nil
+			}
+		}
+	}
+	return err
 }
 
 func (c Action) init(version uint, indexopt app.IndexOption) error {
